@@ -9,6 +9,8 @@ native color picker (RGB and HSL sliders included), preview them live against
 a sample terminal session, and click **Apply to Ptyxis** to write the theme
 file and update your profile via GSettings on the spot.
 
+![Ptyxis Theme Bench editing a Solarized Light theme, with the live terminal preview on the right](screenshot.png)
+
 ## Features
 
 - Six starting presets pulled from Ptyxis's own bundled themes (GNOME,
