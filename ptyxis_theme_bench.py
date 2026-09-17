@@ -154,7 +154,7 @@ def fresh_state(preset):
 
 class ThemeBenchWindow(Adw.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Ptyxis Theme Bench", default_width=1320, default_height=860)
+        super().__init__(application=app, title="Ptyxis Theme Bench", default_width=1320)
 
         self.state = fresh_state(PRESETS[2])  # start on Solarized
         self.editing_variant = "dark"
@@ -224,9 +224,10 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
 
     # ---------- sidebar ----------
     def build_sidebar(self):
-        scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16, margin_top=16, margin_bottom=16,
-                       margin_start=16, margin_end=16)
+        scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                       propagate_natural_height=True, max_content_height=1600)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin_top=12, margin_bottom=12,
+                       margin_start=12, margin_end=12)
         scroller.set_child(box)
 
         # Presets
@@ -239,11 +240,52 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
             preset_flow.append(btn)
         box.append(preset_flow)
 
+        # Theme name (shares its row with the Light/Dark toggle, since the entry doesn't need full width)
+        box.append(self.section_label("Theme name"))
+        name_row = Gtk.Box(spacing=10)
+        self.name_entry = Gtk.Entry(text=self.state["name"], hexpand=True)
+        self.name_entry.connect("changed", self.on_name_changed)
+        name_row.append(self.name_entry)
+
+        self.variant_box = Gtk.Box(spacing=0, css_classes=["linked"], halign=Gtk.Align.END, valign=Gtk.Align.CENTER)
+        self.light_toggle = Gtk.ToggleButton(label="Light")
+        self.dark_toggle = Gtk.ToggleButton(label="Dark", active=True, group=self.light_toggle)
+        self.light_toggle.connect("toggled", self.on_variant_toggled)
+        self.variant_box.append(self.light_toggle)
+        self.variant_box.append(self.dark_toggle)
+        name_row.append(self.variant_box)
+        box.append(name_row)
+
+        # Adaptive switch
+        self.adaptive_switch = Gtk.Switch(valign=Gtk.Align.CENTER, active=True)
+        self.adaptive_switch.connect("notify::active", self.on_adaptive_toggled)
+        box.append(self.compact_row("Different colors for light & dark", self.adaptive_switch))
+
+        # Core colors — two columns: terminal colors on the left, titlebar tint on the right
+        box.append(self.section_label("Core colors"))
+        core_columns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18, homogeneous=True,
+                                valign=Gtk.Align.START)
+        core_left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        core_right = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        left_keys = {"bg", "fg", "cursor"}
+        for key, label in CORE_ROWS:
+            btn = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog(with_alpha=False), valign=Gtk.Align.CENTER)
+            btn.connect("notify::rgba", self.on_core_color_changed, key)
+            self.add_focus_target(btn, {"kind": "core", "key": key})
+            self.core_buttons[key] = btn
+            (core_left if key in left_keys else core_right).append(self.compact_row(label, btn))
+        core_columns.append(core_left)
+        core_columns.append(core_right)
+        box.append(core_columns)
+
         # Fine-tune (RGB / HSL sliders for whichever swatch was last focused)
-        box.append(self.section_label("Fine-tune"))
-        self.ft_hint = Gtk.Label(label="click any swatch below", halign=Gtk.Align.START,
-                                  css_classes=["caption", "dim-label"])
-        box.append(self.ft_hint)
+        ft_header = Gtk.Box(spacing=8)
+        ft_header.append(Gtk.Label(label="Fine-tune", halign=Gtk.Align.START, css_classes=["heading"]))
+        self.ft_hint = Gtk.Label(label="click any swatch to edit it here", halign=Gtk.Align.START,
+                                  css_classes=["caption", "dim-label"], hexpand=True,
+                                  ellipsize=Pango.EllipsizeMode.END, xalign=0)
+        ft_header.append(self.ft_hint)
+        box.append(ft_header)
 
         preview_row = Gtk.Box(spacing=10, margin_top=4, margin_bottom=6)
         self.ft_swatch = Gtk.Frame(width_request=44, height_request=44, valign=Gtk.Align.CENTER)
@@ -254,10 +296,13 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
         preview_row.append(self.ft_hex_entry)
         box.append(preview_row)
 
+        columns = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18, homogeneous=True)
+        box.append(columns)
+
         self.rgb_sliders = {}
         rgb_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         for label, key in [("R", "r"), ("G", "g"), ("B", "b")]:
-            row = Gtk.Box(spacing=8)
+            row = Gtk.Box(spacing=6)
             row.append(Gtk.Label(label=label, width_chars=1, css_classes=["caption"]))
             scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
             scale.set_range(0, 255)
@@ -269,12 +314,12 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
             row.append(val_label)
             rgb_box.append(row)
             self.rgb_sliders[key] = (scale, val_label)
-        box.append(rgb_box)
+        columns.append(rgb_box)
 
         self.hsl_sliders = {}
-        hsl_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, margin_top=8)
+        hsl_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         for label, key, maxv in [("H", "h", 360), ("S", "s", 100), ("L", "l", 100)]:
-            row = Gtk.Box(spacing=8)
+            row = Gtk.Box(spacing=6)
             row.append(Gtk.Label(label=label, width_chars=1, css_classes=["caption"]))
             scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
             scale.set_range(0, maxv)
@@ -286,56 +331,21 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
             row.append(val_label)
             hsl_box.append(row)
             self.hsl_sliders[key] = (scale, val_label)
-        box.append(hsl_box)
+        columns.append(hsl_box)
 
-        # Theme name
-        box.append(self.section_label("Theme name"))
-        self.name_entry = Gtk.Entry(text=self.state["name"])
-        self.name_entry.connect("changed", self.on_name_changed)
-        box.append(self.name_entry)
-
-        # Adaptive switch
-        adaptive_row = Adw.ActionRow(title="Different colors for light &amp; dark")
-        self.adaptive_switch = Gtk.Switch(valign=Gtk.Align.CENTER, active=True)
-        self.adaptive_switch.connect("notify::active", self.on_adaptive_toggled)
-        adaptive_row.add_suffix(self.adaptive_switch)
-        group = Adw.PreferencesGroup()
-        group.add(adaptive_row)
-        box.append(group)
-
-        # Variant toggle
-        self.variant_box = Gtk.Box(spacing=0, css_classes=["linked"], halign=Gtk.Align.START)
-        self.light_toggle = Gtk.ToggleButton(label="Light")
-        self.dark_toggle = Gtk.ToggleButton(label="Dark", active=True, group=self.light_toggle)
-        self.light_toggle.connect("toggled", self.on_variant_toggled)
-        self.variant_box.append(self.light_toggle)
-        self.variant_box.append(self.dark_toggle)
-        box.append(self.variant_box)
-
-        # Core colors
-        box.append(self.section_label("Core colors"))
-        core_group = Adw.PreferencesGroup()
-        for key, label in CORE_ROWS:
-            row = Adw.ActionRow(title=label)
-            btn = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog(with_alpha=False), valign=Gtk.Align.CENTER)
-            btn.connect("notify::rgba", self.on_core_color_changed, key)
-            self.add_focus_target(btn, {"kind": "core", "key": key})
-            self.core_buttons[key] = btn
-            row.add_suffix(btn)
-            core_group.add(row)
-        box.append(core_group)
-
-        bold_row = Adw.ActionRow(title="Bold text uses the bright color variant")
         self.bold_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
         self.bold_switch.connect("notify::active", self.on_bold_toggled)
-        bold_row.add_suffix(self.bold_switch)
-        bold_group = Adw.PreferencesGroup()
-        bold_group.add(bold_row)
-        box.append(bold_group)
+        box.append(self.compact_row("Bold text uses the bright color variant", self.bold_switch))
 
         # ANSI palette
-        box.append(self.section_label("ANSI palette"))
-        grid = Gtk.Grid(row_spacing=4, column_spacing=4)
+        ansi_header = Gtk.Box(spacing=8)
+        ansi_header.append(Gtk.Label(label="ANSI palette", halign=Gtk.Align.START, css_classes=["heading"]))
+        ansi_header.append(Gtk.Label(
+            label="used by ls, git diff, and other colored output",
+            halign=Gtk.Align.START, css_classes=["caption", "dim-label"], hexpand=True,
+            ellipsize=Pango.EllipsizeMode.END, xalign=0))
+        box.append(ansi_header)
+        grid = Gtk.Grid(row_spacing=3, column_spacing=3, margin_top=4)
         for col, label in enumerate(ANSI_LABELS):
             l = Gtk.Label(label=label, css_classes=["caption"])
             grid.attach(l, col + 1, 0, 1, 1)
@@ -344,29 +354,12 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
             for col in range(8):
                 idx = row_idx * 8 + col
                 btn = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog(with_alpha=False))
-                btn.set_size_request(34, 28)
+                btn.set_size_request(32, 24)
                 btn.connect("notify::rgba", self.on_ansi_color_changed, idx)
                 self.add_focus_target(btn, {"kind": "ansi", "idx": idx})
                 self.ansi_buttons.append(btn)
                 grid.attach(btn, col + 1, row_idx + 1, 1, 1)
         box.append(grid)
-
-        # Font
-        box.append(self.section_label("Font"))
-        font_use_row = Adw.ActionRow(title="Use system font")
-        self.font_switch = Gtk.Switch(valign=Gtk.Align.CENTER, active=True)
-        self.font_switch.connect("notify::active", self.on_font_switch_toggled)
-        font_use_row.add_suffix(self.font_switch)
-        font_group = Adw.PreferencesGroup()
-        font_group.add(font_use_row)
-
-        font_row = Adw.ActionRow(title="Custom font")
-        self.font_btn = Gtk.FontDialogButton(dialog=Gtk.FontDialog(), valign=Gtk.Align.CENTER, sensitive=False)
-        self.font_btn.set_font_desc(Pango.FontDescription.from_string(self.state["font_desc"]))
-        self.font_btn.connect("notify::font-desc", self.on_font_changed)
-        font_row.add_suffix(self.font_btn)
-        font_group.add(font_row)
-        box.append(font_group)
 
         self.status_label = Gtk.Label(label="", wrap=True, css_classes=["caption"], margin_top=8)
         box.append(self.status_label)
@@ -376,6 +369,13 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
     def section_label(self, text):
         l = Gtk.Label(label=text, halign=Gtk.Align.START, css_classes=["heading"])
         return l
+
+    def compact_row(self, label_text, widget):
+        """A dense label+widget row, without the padded 'boxed list' card look of Adw.ActionRow."""
+        row = Gtk.Box(spacing=10)
+        row.append(Gtk.Label(label=label_text, hexpand=True, halign=Gtk.Align.START))
+        row.append(widget)
+        return row
 
     # ---------- main / preview ----------
     def build_main(self):
@@ -396,6 +396,22 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
         inner.append(self.preview)
         frame.set_child(inner)
         box.append(frame)
+
+        # Font (lives here, not the sidebar, to keep the window shorter)
+        font_group = Adw.PreferencesGroup(title="Font")
+        font_use_row = Adw.ActionRow(title="Use system font")
+        self.font_switch = Gtk.Switch(valign=Gtk.Align.CENTER, active=True)
+        self.font_switch.connect("notify::active", self.on_font_switch_toggled)
+        font_use_row.add_suffix(self.font_switch)
+        font_group.add(font_use_row)
+
+        font_row = Adw.ActionRow(title="Custom font")
+        self.font_btn = Gtk.FontDialogButton(dialog=Gtk.FontDialog(), valign=Gtk.Align.CENTER, sensitive=False)
+        self.font_btn.set_font_desc(Pango.FontDescription.from_string(self.state["font_desc"]))
+        self.font_btn.connect("notify::font-desc", self.on_font_changed)
+        font_row.add_suffix(self.font_btn)
+        font_group.add(font_row)
+        box.append(font_group)
 
         buf = self.preview.get_buffer()
         self.preview_tags = {
