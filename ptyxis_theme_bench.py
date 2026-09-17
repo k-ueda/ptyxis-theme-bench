@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Terminal Theme Bench (native) — edits Ptyxis palettes directly, no copy/paste."""
+"""Ptyxis Theme Bench (native) — edits Ptyxis palettes directly, no copy/paste."""
 import os
 import copy
 import gi
@@ -91,7 +91,7 @@ def fresh_state(preset):
 
 class ThemeBenchWindow(Adw.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Terminal Theme Bench", default_width=1320, default_height=860)
+        super().__init__(application=app, title="Ptyxis Theme Bench", default_width=1320, default_height=860)
 
         self.state = fresh_state(PRESETS[2])  # start on Solarized
         self.editing_variant = "dark"
@@ -123,7 +123,7 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
 
         toolbar = Adw.ToolbarView()
         header = Adw.HeaderBar()
-        title = Adw.WindowTitle(title="Terminal Theme Bench", subtitle="edits Ptyxis directly — nothing to copy/paste")
+        title = Adw.WindowTitle(title="Ptyxis Theme Bench", subtitle="edits Ptyxis directly — nothing to copy/paste")
         header.set_title_widget(title)
 
         self.apply_btn = Gtk.Button(label="Apply to Ptyxis")
@@ -465,7 +465,7 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
 
 class ThemeBenchApp(Adw.Application):
     def __init__(self):
-        super().__init__(application_id="com.ueda.TerminalThemeBench")
+        super().__init__(application_id="com.ueda.PtyxisThemeBench")
 
     def do_activate(self):
         win = self.props.active_window

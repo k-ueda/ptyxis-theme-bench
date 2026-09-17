@@ -6,22 +6,22 @@ BUILD=$(mktemp -d)
 mkdir -p "$BUILD/DEBIAN" "$BUILD/usr/bin" "$BUILD/usr/share/ptyxis-theme-bench" \
          "$BUILD/usr/share/applications" "$BUILD/usr/share/doc/ptyxis-theme-bench"
 
-cp terminal_theme_bench.py "$BUILD/usr/share/ptyxis-theme-bench/"
-cp terminal-theme-bench.desktop "$BUILD/usr/share/applications/"
+cp ptyxis_theme_bench.py "$BUILD/usr/share/ptyxis-theme-bench/"
+cp ptyxis-theme-bench.desktop "$BUILD/usr/share/applications/"
 cp packaging/DEBIAN/control "$BUILD/DEBIAN/control"
 cp packaging/DEBIAN/postinst "$BUILD/DEBIAN/postinst"
 chmod 755 "$BUILD/DEBIAN/postinst"
 
-cat > "$BUILD/usr/bin/terminal-theme-bench" << 'WRAP'
+cat > "$BUILD/usr/bin/ptyxis-theme-bench" << 'WRAP'
 #!/bin/sh
-exec python3 /usr/share/ptyxis-theme-bench/terminal_theme_bench.py "$@"
+exec python3 /usr/share/ptyxis-theme-bench/ptyxis_theme_bench.py "$@"
 WRAP
-chmod 755 "$BUILD/usr/bin/terminal-theme-bench"
+chmod 755 "$BUILD/usr/bin/ptyxis-theme-bench"
 
 cp LICENSE "$BUILD/usr/share/doc/ptyxis-theme-bench/copyright"
-chmod -R 644 "$BUILD/usr/share/doc/ptyxis-theme-bench/copyright" \
-             "$BUILD/usr/share/applications/terminal-theme-bench.desktop" \
-             "$BUILD/usr/share/ptyxis-theme-bench/terminal_theme_bench.py"
+chmod 644 "$BUILD/usr/share/doc/ptyxis-theme-bench/copyright" \
+          "$BUILD/usr/share/applications/ptyxis-theme-bench.desktop" \
+          "$BUILD/usr/share/ptyxis-theme-bench/ptyxis_theme_bench.py"
 find "$BUILD" -type d -exec chmod 755 {} \;
 
 VERSION=$(grep -oP '(?<=^Version: ).*' packaging/DEBIAN/control)

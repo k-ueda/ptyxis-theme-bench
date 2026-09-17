@@ -33,8 +33,8 @@ Download the latest `.deb` from
 sudo apt install ./ptyxis-theme-bench_*.deb
 ```
 
-This also registers it as a normal application (search "Terminal Theme
-Bench" in your app grid) and installs the `terminal-theme-bench` command.
+This also registers it as a normal application (search "Ptyxis Theme
+Bench" in your app grid) and installs the `ptyxis-theme-bench` command.
 
 ## Build from source
 
@@ -50,8 +50,11 @@ Requires `python3`, `python3-gi`, `gir1.2-gtk-4.0`, and `gir1.2-adw-1`
 
 ## Why this exists
 
-Ptyxis's own Preferences window only offers a curated list of built-in
-palettes — no font picker, no per-color editing. This app fills that gap by
+Ptyxis's own Preferences does let you change the font and its size — but its
+Appearance section only offers a curated list of built-in palettes, with no
+way to fine-tune an individual color, set an exact hex value, or give light
+and dark mode different colors. This app fills that gap (and keeps the font
+picker alongside it, since it's convenient to have both in one place) by
 talking directly to the same `.palette` file format and GSettings schema
 Ptyxis itself uses, rather than trying to patch its UI.
 
