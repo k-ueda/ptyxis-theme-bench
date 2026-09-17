@@ -4,10 +4,10 @@ A native GTK4 / libadwaita app for designing a color theme for
 [Ptyxis](https://gitlab.gnome.org/chergert/ptyxis) — the default terminal on
 Ubuntu 26.04 and other recent GNOME desktops — and applying it instantly.
 
-No copy/paste, no manual `.palette` file editing: pick colors with GTK's
-native color picker (RGB and HSL sliders included), preview them live against
-a sample terminal session, and click **Apply to Ptyxis** to write the theme
-file and update your profile via GSettings on the spot.
+No copy/paste, no manual `.palette` file editing: click any color to fine-tune
+it with real RGB and HSL sliders, preview it live against a sample terminal
+session, and click **Apply to Ptyxis** to write the theme file and update
+your profile via GSettings on the spot.
 
 ![Ptyxis Theme Bench editing a Solarized Light theme, with the live terminal preview on the right](screenshot.png)
 
@@ -18,8 +18,10 @@ file and update your profile via GSettings on the spot.
   variants
 - Full control over background, foreground, cursor, titlebar tint, and all
   16 ANSI colors, independently for light and dark mode
-- Native font picker, native color picker — no custom widgets standing in
-  for what the OS already does well
+- A Fine-tune panel with real RGB and HSL sliders (gradient tracks included)
+  for whichever color you last clicked — GTK's own color picker is still one
+  click away too, for a quick pick
+- Native font picker for everything that doesn't need custom sliders
 - Opens already reflecting whatever font and light/dark mode Ptyxis is
   currently using
 - Applies directly — writes to

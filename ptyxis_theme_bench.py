@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Ptyxis Theme Bench (native) — edits Ptyxis palettes directly, no copy/paste."""
 import os
+import re
 import copy
 import gi
 
@@ -77,6 +78,68 @@ def rgba_to_hex(rgba):
     return f"#{r:02X}{g:02X}{b:02X}"
 
 
+def hex_to_rgb(h):
+    h = h.lstrip("#")
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def rgb_to_hex(r, g, b):
+    r = max(0, min(255, round(r)))
+    g = max(0, min(255, round(g)))
+    b = max(0, min(255, round(b)))
+    return f"#{r:02X}{g:02X}{b:02X}"
+
+
+def rgb_to_hsl(r, g, b):
+    r, g, b = r / 255, g / 255, b / 255
+    mx, mn = max(r, g, b), min(r, g, b)
+    l = (mx + mn) / 2
+    if mx == mn:
+        h = s = 0.0
+    else:
+        d = mx - mn
+        s = d / (2 - mx - mn) if l > 0.5 else d / (mx + mn)
+        if mx == r:
+            h = (g - b) / d + (6 if g < b else 0)
+        elif mx == g:
+            h = (b - r) / d + 2
+        else:
+            h = (r - g) / d + 4
+        h /= 6
+    return round(h * 360), round(s * 100), round(l * 100)
+
+
+def hsl_to_rgb(h, s, l):
+    h, s, l = h / 360, s / 100, l / 100
+    if s == 0:
+        r = g = b = l
+    else:
+        def hue2rgb(p, q, t):
+            if t < 0: t += 1
+            if t > 1: t -= 1
+            if t < 1 / 6: return p + (q - p) * 6 * t
+            if t < 1 / 2: return q
+            if t < 2 / 3: return p + (q - p) * (2 / 3 - t) * 6
+            return p
+        q = l * (1 + s) if l < 0.5 else l + s - l * s
+        p = 2 * l - q
+        r = hue2rgb(p, q, h + 1 / 3)
+        g = hue2rgb(p, q, h)
+        b = hue2rgb(p, q, h - 1 / 3)
+    return round(r * 255), round(g * 255), round(b * 255)
+
+
+def normalize_hex(v):
+    v = v.strip()
+    if not v.startswith("#"):
+        v = "#" + v
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", v):
+        return v.upper()
+    if re.fullmatch(r"#[0-9a-fA-F]{3}", v):
+        return "#" + "".join(c * 2 for c in v[1:]).upper()
+    return None
+
+
 def fresh_state(preset):
     return {
         "name": "My " + preset["name"],
@@ -97,6 +160,8 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
         self.editing_variant = "dark"
         self.core_buttons = {}
         self.ansi_buttons = []
+        self.active_target = {"kind": "core", "key": "bg"}
+        self._ft_syncing = False
 
         # Reflect whatever font Ptyxis is actually using right now, not a hardcoded guess.
         try:
@@ -151,6 +216,9 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
         self.css_provider = Gtk.CssProvider()
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), self.css_provider,
                                                     Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self.ft_css_provider = Gtk.CssProvider()
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), self.ft_css_provider,
+                                                    Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
         self.refresh_all()
 
@@ -170,6 +238,55 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
             btn.connect("clicked", lambda _b, preset=p: self.load_preset(preset))
             preset_flow.append(btn)
         box.append(preset_flow)
+
+        # Fine-tune (RGB / HSL sliders for whichever swatch was last focused)
+        box.append(self.section_label("Fine-tune"))
+        self.ft_hint = Gtk.Label(label="click any swatch below", halign=Gtk.Align.START,
+                                  css_classes=["caption", "dim-label"])
+        box.append(self.ft_hint)
+
+        preview_row = Gtk.Box(spacing=10, margin_top=4, margin_bottom=6)
+        self.ft_swatch = Gtk.Frame(width_request=44, height_request=44, valign=Gtk.Align.CENTER)
+        self.ft_swatch.set_name("ftSwatch")
+        self.ft_hex_entry = Gtk.Entry(hexpand=True, valign=Gtk.Align.CENTER)
+        self.ft_hex_entry.connect("activate", self.on_ft_hex_activate)
+        preview_row.append(self.ft_swatch)
+        preview_row.append(self.ft_hex_entry)
+        box.append(preview_row)
+
+        self.rgb_sliders = {}
+        rgb_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        for label, key in [("R", "r"), ("G", "g"), ("B", "b")]:
+            row = Gtk.Box(spacing=8)
+            row.append(Gtk.Label(label=label, width_chars=1, css_classes=["caption"]))
+            scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
+            scale.set_range(0, 255)
+            scale.set_draw_value(False)
+            scale.set_name(f"ftScale{key.upper()}")
+            val_label = Gtk.Label(label="0", width_chars=3, css_classes=["caption", "numeric"])
+            scale.connect("value-changed", self.on_rgb_slider_changed)
+            row.append(scale)
+            row.append(val_label)
+            rgb_box.append(row)
+            self.rgb_sliders[key] = (scale, val_label)
+        box.append(rgb_box)
+
+        self.hsl_sliders = {}
+        hsl_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, margin_top=8)
+        for label, key, maxv in [("H", "h", 360), ("S", "s", 100), ("L", "l", 100)]:
+            row = Gtk.Box(spacing=8)
+            row.append(Gtk.Label(label=label, width_chars=1, css_classes=["caption"]))
+            scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, hexpand=True)
+            scale.set_range(0, maxv)
+            scale.set_draw_value(False)
+            scale.set_name(f"ftScale{key.upper()}")
+            val_label = Gtk.Label(label="0", width_chars=4, css_classes=["caption", "numeric"])
+            scale.connect("value-changed", self.on_hsl_slider_changed)
+            row.append(scale)
+            row.append(val_label)
+            hsl_box.append(row)
+            self.hsl_sliders[key] = (scale, val_label)
+        box.append(hsl_box)
 
         # Theme name
         box.append(self.section_label("Theme name"))
@@ -202,6 +319,7 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
             row = Adw.ActionRow(title=label)
             btn = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog(with_alpha=False), valign=Gtk.Align.CENTER)
             btn.connect("notify::rgba", self.on_core_color_changed, key)
+            self.add_focus_target(btn, {"kind": "core", "key": key})
             self.core_buttons[key] = btn
             row.add_suffix(btn)
             core_group.add(row)
@@ -228,6 +346,7 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
                 btn = Gtk.ColorDialogButton(dialog=Gtk.ColorDialog(with_alpha=False))
                 btn.set_size_request(34, 28)
                 btn.connect("notify::rgba", self.on_ansi_color_changed, idx)
+                self.add_focus_target(btn, {"kind": "ansi", "idx": idx})
                 self.ansi_buttons.append(btn)
                 grid.attach(btn, col + 1, row_idx + 1, 1, 1)
         box.append(grid)
@@ -323,11 +442,107 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
 
     def on_core_color_changed(self, btn, _pspec, key):
         self.active_data()[key] = rgba_to_hex(btn.get_rgba())
+        self.update_fine_tune()
         self.refresh_preview()
 
     def on_ansi_color_changed(self, btn, _pspec, idx):
         self.active_data()["palette"][idx] = rgba_to_hex(btn.get_rgba())
+        self.update_fine_tune()
         self.refresh_preview()
+
+    # ---------- fine-tune (RGB / HSL sliders) ----------
+    def add_focus_target(self, widget, target):
+        controller = Gtk.EventControllerFocus()
+        controller.connect("enter", lambda _c, t=target: self.select_target(t))
+        widget.add_controller(controller)
+
+    def get_hex_for(self, target):
+        d = self.active_data()
+        return d[target["key"]] if target["kind"] == "core" else d["palette"][target["idx"]]
+
+    def set_hex_for(self, target, hexval):
+        d = self.active_data()
+        if target["kind"] == "core":
+            d[target["key"]] = hexval
+        else:
+            d["palette"][target["idx"]] = hexval
+
+    def target_label(self, target):
+        if target["kind"] == "core":
+            return dict(CORE_ROWS)[target["key"]]
+        bright = target["idx"] >= 8
+        return ("Bright " if bright else "") + ANSI_LABELS[target["idx"] % 8] + f" · Color{target['idx']}"
+
+    def select_target(self, target):
+        self.active_target = target
+        self.update_fine_tune()
+
+    def sync_button_for_target(self, target, hexval):
+        if target["kind"] == "core":
+            self.core_buttons[target["key"]].set_rgba(hex_to_rgba(hexval))
+        else:
+            self.ansi_buttons[target["idx"]].set_rgba(hex_to_rgba(hexval))
+
+    def update_fine_tune(self):
+        hexval = self.get_hex_for(self.active_target)
+        r, g, b = hex_to_rgb(hexval)
+        h, s, l = rgb_to_hsl(r, g, b)
+
+        self.ft_hint.set_label("editing: " + self.target_label(self.active_target))
+        self.ft_hex_entry.set_text(hexval)
+
+        self._ft_syncing = True
+        self.rgb_sliders["r"][0].set_value(r); self.rgb_sliders["r"][1].set_label(str(r))
+        self.rgb_sliders["g"][0].set_value(g); self.rgb_sliders["g"][1].set_label(str(g))
+        self.rgb_sliders["b"][0].set_value(b); self.rgb_sliders["b"][1].set_label(str(b))
+        self.hsl_sliders["h"][0].set_value(h); self.hsl_sliders["h"][1].set_label(f"{h}°")
+        self.hsl_sliders["s"][0].set_value(s); self.hsl_sliders["s"][1].set_label(f"{s}%")
+        self.hsl_sliders["l"][0].set_value(l); self.hsl_sliders["l"][1].set_label(f"{l}%")
+        self._ft_syncing = False
+
+        css = f"""
+        frame#ftSwatch {{ background-color: {hexval}; }}
+        scale#ftScaleR trough {{ background-image: linear-gradient(to right, {rgb_to_hex(0,g,b)}, {rgb_to_hex(255,g,b)}); }}
+        scale#ftScaleG trough {{ background-image: linear-gradient(to right, {rgb_to_hex(r,0,b)}, {rgb_to_hex(r,255,b)}); }}
+        scale#ftScaleB trough {{ background-image: linear-gradient(to right, {rgb_to_hex(r,g,0)}, {rgb_to_hex(r,g,255)}); }}
+        scale#ftScaleH trough {{ background-image: linear-gradient(to right, hsl(0,{s}%,{l}%), hsl(60,{s}%,{l}%), hsl(120,{s}%,{l}%), hsl(180,{s}%,{l}%), hsl(240,{s}%,{l}%), hsl(300,{s}%,{l}%), hsl(360,{s}%,{l}%)); }}
+        scale#ftScaleS trough {{ background-image: linear-gradient(to right, hsl({h},0%,{l}%), hsl({h},100%,{l}%)); }}
+        scale#ftScaleL trough {{ background-image: linear-gradient(to right, #000000, hsl({h},{s}%,50%), #ffffff); }}
+        """
+        self.ft_css_provider.load_from_string(css)
+
+    def on_rgb_slider_changed(self, _scale):
+        if self._ft_syncing:
+            return
+        r = round(self.rgb_sliders["r"][0].get_value())
+        g = round(self.rgb_sliders["g"][0].get_value())
+        b = round(self.rgb_sliders["b"][0].get_value())
+        hexval = rgb_to_hex(r, g, b)
+        self.set_hex_for(self.active_target, hexval)
+        self.sync_button_for_target(self.active_target, hexval)
+        self.update_fine_tune()
+        self.refresh_preview()
+
+    def on_hsl_slider_changed(self, _scale):
+        if self._ft_syncing:
+            return
+        h = self.hsl_sliders["h"][0].get_value()
+        s = self.hsl_sliders["s"][0].get_value()
+        l = self.hsl_sliders["l"][0].get_value()
+        r, g, b = hsl_to_rgb(h, s, l)
+        hexval = rgb_to_hex(r, g, b)
+        self.set_hex_for(self.active_target, hexval)
+        self.sync_button_for_target(self.active_target, hexval)
+        self.update_fine_tune()
+        self.refresh_preview()
+
+    def on_ft_hex_activate(self, entry):
+        hexval = normalize_hex(entry.get_text())
+        if hexval:
+            self.set_hex_for(self.active_target, hexval)
+            self.sync_button_for_target(self.active_target, hexval)
+            self.update_fine_tune()
+            self.refresh_preview()
 
     def on_bold_toggled(self, switch, _pspec):
         self.state["bold_is_bright"] = switch.get_active()
@@ -359,6 +574,7 @@ class ThemeBenchWindow(Adw.ApplicationWindow):
         for idx, btn in enumerate(self.ansi_buttons):
             btn.set_rgba(hex_to_rgba(d["palette"][idx]))
 
+        self.update_fine_tune()
         self.refresh_preview()
 
     # ---------- preview ----------
