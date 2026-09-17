@@ -1,0 +1,13 @@
+Package: ptyxis-theme-bench
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: all
+Depends: python3, python3-gi, gir1.2-gtk-4.0, gir1.2-adw-1
+Recommends: ptyxis
+Maintainer: Kazunori Ueda <kazunori.ueda.ku@gmail.com>
+Description: Visual theme editor for the Ptyxis terminal
+ A native GTK4/libadwaita app for designing Ptyxis terminal color
+ palettes (light and dark variants, titlebar tinting, ANSI colors,
+ font) with a live preview, applying changes directly via GSettings
+ and .palette files — no manual editing or copy/paste required.

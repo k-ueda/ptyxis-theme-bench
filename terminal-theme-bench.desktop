@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal Theme Bench
+Comment=Design a Ptyxis terminal theme and apply it instantly
+Exec=python3 /home/ueda/.local/share/terminal-theme-bench/terminal_theme_bench.py
+Icon=preferences-desktop-font
+Terminal=false
+Categories=Utility;Settings;
+StartupNotify=true
